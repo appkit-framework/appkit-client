@@ -18,7 +18,7 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
 
     protected $log;
 
-    protected $connection;
+    private $connection;
     private $isStopping = false;
     private $connectTask;
 
@@ -71,9 +71,11 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
         return $this -> connection !== null && $this -> connection -> isConnected();
     }
 
-    protected function ensureConnected() {
+    protected function getConnection() {
         if(! $this -> isConnected())
             throw new ClientException('Client not connected');
+
+        return $this -> connection;
     }
 
     private function startConnectTask() {
