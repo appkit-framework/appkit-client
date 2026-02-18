@@ -1,0 +1,129 @@
+<?php
+
+namespace AppKit\Client;
+
+use AppKit\StartStop\StartStopInterface;
+use AppKit\Health\HealthIndicatorInterface;
+use AppKit\Health\HealthCheckResult;
+use AppKit\Async\Task;
+use function AppKit\Async\delay;
+
+use Throwable;
+use Evenement\EventEmitterInterface;
+use Evenement\EventEmitterTrait;
+
+abstract class AbstractClient
+implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
+    use EventEmitterTrait;
+
+    protected $log;
+
+    protected $connection;
+    private $isStopping = false;
+    private $connectTask;
+
+    abstract protected function createConnection();
+    
+    function __construct($log) {
+        $this -> log = $log;
+    }
+    
+    public function start() {
+        $this -> startConnectTask();
+        $this -> connectTask -> await();
+    }
+    
+    public function stop() {
+        $this -> isStopping = true;
+
+        if($this -> connectTask -> getStatus() == Task::RUNNING) {
+            $this -> log -> debug('Connect task running during stop, canceling');
+            $this -> connectTask -> cancel() -> join();
+        }
+
+        if($this -> isConnected()) {
+            try {
+                $this -> connection -> disconnect();
+                $this -> log -> info('Disconnected');
+            } catch(Throwable $e) {
+                $error = 'Failed to disconnect';
+                $this -> log -> error($error, $e);
+                throw new ClientException(
+                    $error,
+                    previous: $e
+                );
+            }
+        }
+    }
+
+    public function checkHealth() {
+        $data = [
+            'Connected' => $this -> isConnected()
+        ];
+
+        if($this -> connection instanceof HealthIndicatorInterface)
+            $data['Connection ' . get_class($this -> connection)] = $this -> connection;
+
+        return new HealthCheckResult($data);
+    }
+
+    protected function isConnected() {
+        return $this -> connection !== null && $this -> connection -> isConnected();
+    }
+
+    protected function ensureConnected() {
+        if(! $this -> isConnected())
+            throw new ClientException('Client not connected');
+    }
+
+    private function startConnectTask() {
+        $this -> connectTask = new Task(function() {
+            return $this -> connectRoutine();
+        }) -> run();
+    }
+
+    private function connectRoutine() {
+        $retryAfter = null;
+
+        while(true) {
+            try {
+                $this -> log -> debug('Trying to connect');
+                $connection = $this -> createConnection();
+                $connection -> connect();
+                break;
+            } catch(Throwable $e) {
+                if(! $retryAfter)
+                    $retryAfter = 1;
+                else if($retryAfter == 1)
+                    $retryAfter = 5;
+                else if($retryAfter == 5)
+                    $retryAfter = 10;
+
+                $this -> log -> error(
+                    'Failed to connect',
+                    [ 'retryAfter' => $retryAfter ],
+                    $e
+                );
+                delay($retryAfter);
+            }
+        }
+
+        $this -> connection = $connection;
+        $this -> connection -> once('close', function() {
+            $this -> onConnectionClose();
+        });
+        $this -> log -> info('Connected');
+        $this -> emit('connect');
+    }
+
+    protected function onConnectionClose() {
+        $this -> connection = null;
+        $this -> emit('close');
+
+        if($this -> isStopping)
+            return;
+
+        $this -> log -> warning('Connection lost, reconnecting');
+        $this -> startConnectTask();
+    }
+}

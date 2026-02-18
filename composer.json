@@ -1,0 +1,21 @@
+{
+    "name": "appkit/client",
+    "type": "library",
+    "description": "Abstractions for arbitrary service clients and connections for the AppKit framework",
+    "license": "MIT",
+    "require": {
+        "appkit/async": "^1.0",
+        "appkit/health": "^1.0",
+        "appkit/start-stop": "^1.0",
+        "evenement/evenement": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "AppKit\\Client\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
