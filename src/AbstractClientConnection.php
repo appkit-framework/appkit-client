@@ -8,35 +8,39 @@ use Evenement\EventEmitterTrait;
 abstract class AbstractClientConnection implements EventEmitterInterface {
     use EventEmitterTrait;
 
-    private $connected = false;
+    private const CLOSED        = 0;
+    private const CONNECTED     = 1;
+    private const DISCONNECTING = 2;
+
+    private $status = self::CLOSED;
 
     abstract protected function doConnect();
     abstract protected function doDisconnect();
 
     public function connect() {
         $this -> doConnect();
-        $this -> connected = true;
+        $this -> status = self::CONNECTED;
     }
 
     public function disconnect() {
+        $this -> status = self::DISCONNECTING;
         $this -> doDisconnect();
-        $this -> setClosed();
     }
 
     public function isConnected() {
-        return $this -> connected;
+        return $this -> status == self::CONNECTED;
     }
 
     protected function setClosed() {
-        if(! $this -> connected)
+        if($this -> status == self::CLOSED)
             return;
 
-        $this -> connected = false;
+        $this -> status = self::CLOSED;
         $this -> emit('close');
     }
 
     protected function ensureConnected() {
-        if(! $this -> connected)
+        if($this -> status != self::CONNECTED)
             throw new ClientConnectionException('Connection is closed');
     }
 }

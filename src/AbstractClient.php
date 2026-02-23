@@ -6,11 +6,13 @@ use AppKit\StartStop\StartStopInterface;
 use AppKit\Health\HealthIndicatorInterface;
 use AppKit\Health\HealthCheckResult;
 use AppKit\Async\Task;
+use function AppKit\Async\await;
 use function AppKit\Async\delay;
 
 use Throwable;
 use Evenement\EventEmitterInterface;
 use Evenement\EventEmitterTrait;
+use React\Promise\Deferred;
 
 abstract class AbstractClient
 implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
@@ -19,8 +21,8 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
     protected $log;
 
     private $connection;
-    private $isStopping = false;
     private $connectTask;
+    private $disconnectDeferred;
 
     abstract protected function createConnection();
     
@@ -34,17 +36,17 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
     }
     
     public function stop() {
-        $this -> isStopping = true;
-
         if($this -> connectTask -> getStatus() == Task::RUNNING) {
             $this -> log -> debug('Connect task running during stop, canceling');
             $this -> connectTask -> cancel() -> join();
         }
 
         if($this -> isConnected()) {
+            $this -> log -> debug('Trying to disconnect');
+            $this -> disconnectDeferred = new Deferred();
+
             try {
                 $this -> connection -> disconnect();
-                $this -> log -> info('Disconnected');
             } catch(Throwable $e) {
                 $error = 'Failed to disconnect';
                 $this -> log -> error($error, $e);
@@ -53,6 +55,9 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
                     previous: $e
                 );
             }
+
+            await($this -> disconnectDeferred -> promise());
+            $this -> log -> info('Disconnected');
         }
     }
 
@@ -67,12 +72,12 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
         return new HealthCheckResult($data);
     }
 
-    protected function isConnected() {
+    public function isConnected() {
         return $this -> connection !== null && $this -> connection -> isConnected();
     }
 
     protected function getConnection() {
-        if(! $this -> isConnected())
+        if(! $this -> connection)
             throw new ClientException('Client not connected');
 
         return $this -> connection;
@@ -88,8 +93,9 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
         $retryAfter = null;
 
         while(true) {
+            $this -> log -> debug('Trying to connect');
+
             try {
-                $this -> log -> debug('Trying to connect');
                 $connection = $this -> createConnection();
                 $connection -> connect();
                 break;
@@ -122,8 +128,10 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
         $this -> connection = null;
         $this -> emit('close');
 
-        if($this -> isStopping)
+        if($this -> disconnectDeferred) {
+            $this -> disconnectDeferred -> resolve(null);
             return;
+        }
 
         $this -> log -> warning('Connection lost, reconnecting');
         $this -> startConnectTask();
