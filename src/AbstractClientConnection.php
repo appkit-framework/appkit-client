@@ -8,9 +8,9 @@ use Evenement\EventEmitterTrait;
 abstract class AbstractClientConnection implements EventEmitterInterface {
     use EventEmitterTrait;
 
-    private const CLOSED        = 0;
-    private const CONNECTED     = 1;
-    private const DISCONNECTING = 2;
+    protected const CLOSED        = 0;
+    protected const CONNECTED     = 1;
+    protected const DISCONNECTING = 2;
 
     private $status = self::CLOSED;
 
@@ -29,6 +29,10 @@ abstract class AbstractClientConnection implements EventEmitterInterface {
 
     public function isConnected() {
         return $this -> status == self::CONNECTED;
+    }
+
+    protected function getStatus() {
+        return $this -> status;
     }
 
     protected function setClosed() {
