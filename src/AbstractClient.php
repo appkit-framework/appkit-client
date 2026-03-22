@@ -90,7 +90,7 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
     }
 
     private function connectRoutine() {
-        $retryAfter = null;
+        $retryDelay = null;
 
         while(true) {
             $this -> log -> debug('Trying to connect');
@@ -100,19 +100,19 @@ implements StartStopInterface, HealthIndicatorInterface, EventEmitterInterface {
                 $connection -> connect();
                 break;
             } catch(Throwable $e) {
-                if(! $retryAfter)
-                    $retryAfter = 1;
-                else if($retryAfter == 1)
-                    $retryAfter = 5;
-                else if($retryAfter == 5)
-                    $retryAfter = 10;
+                if(! $retryDelay)
+                    $retryDelay = 1;
+                else if($retryDelay == 1)
+                    $retryDelay = 5;
+                else if($retryDelay == 5)
+                    $retryDelay = 10;
 
                 $this -> log -> error(
-                    'Failed to connect',
-                    [ 'retryAfter' => $retryAfter ],
+                    'Failed to connect, retrying in {retryDelay} seconds',
+                    [ 'retryDelay' => $retryDelay ],
                     $e
                 );
-                delay($retryAfter);
+                delay($retryDelay);
             }
         }
 
